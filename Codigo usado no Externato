@@ -1,0 +1,120 @@
+package org.firstinspires.ftc.teamcode;
+
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+
+@TeleOp(name = "MovimentacaoExternato", group = "TeleOp")
+public class MeuPrimeiroCodigo extends LinearOpMode {
+
+    // Motores do chassi Mecanum (DcMotorEx para usar controle por velocidade)
+    private DcMotorEx frontLeft;
+    private DcMotorEx frontRight;
+    private DcMotorEx backLeft;
+    private DcMotorEx backRight;
+
+    private int modoVelocidade = 0; // 0 = normal, 1 = fast, 2 = ultrafast
+    private boolean botaoApertadoAnterior = false;
+
+    // Valores de cada modo — ajuste como quiser
+    private final double VELOCIDADE_NORMAL = 0.5;
+    private final double VELOCIDADE_FAST = 0.75;
+    private final double VELOCIDADE_ULTRAFAST = 0.85;
+
+
+    // Velocidade máxima do motor em ticks/segundo, usada para converter a
+    // "potência" (-1.0 a 1.0) do analógico em uma velocidade real (ticks/s)
+    private double velocidadeMaxima;
+
+    @Override
+    public void runOpMode() {
+
+        // IMPORTANTE: os nomes entre aspas precisam ser IGUAIS aos nomes
+        // configurados na tela de configuração do robô no Driver Station.
+        frontLeft = hardwareMap.get(DcMotorEx.class, "frontLeft");
+        frontRight  = hardwareMap.get(DcMotorEx.class, "frontRight");
+        backLeft   = hardwareMap.get(DcMotorEx.class, "backLeft");
+        backRight    = hardwareMap.get(DcMotorEx.class, "backRight");
+
+        // Em um chassi Mecanum, os motores de um dos lados ficam montados
+        // fisicamente ao contrário, por isso invertemos a direção deles.
+        backRight.setDirection(DcMotorSimple.Direction.REVERSE);
+        frontRight.setDirection(DcMotorSimple.Direction.REVERSE );
+
+        // RUN_USING_ENCODER liga o controle por velocidade (PIDF interno),
+        // que é o recurso que o setVelocity() do DcMotorEx usa. Precisa que
+        // o cabo do encoder de cada motor esteja conectado no Hub.
+        frontLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        frontRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        // Pega a velocidade máxima (ticks/s) direto das especificações do
+        // motor cadastrado no hardwareMap (assumindo os 4 motores são iguais)
+        velocidadeMaxima = frontLeft.getMotorType().getAchieveableMaxTicksPerSecond();
+
+        telemetry.addData("Status", "Pronto para iniciar");
+        telemetry.update();
+
+        waitForStart();
+
+        while (opModeIsActive()) {
+
+            // --- Analógico ESQUERDO (eixo Y): frente/trás ---
+            double frente = -gamepad1.left_stick_y * 3.0; // eixo Y do gamepad vem invertido
+
+            // --- L1/R1: movimento lateral (caranguejo) ---
+            // R1 = direita (+1), L1 = esquerda (-1), nenhum ou os dois = parado (0)
+            double lado = (gamepad1.right_trigger_pressed? 1.0 : 0.0) - (gamepad1.left_trigger_pressed ? 1.0 : 0.0);
+            lado *= 1.1; // corrige a perda de força no strafe
+
+            // --- Analógico DIREITO: rotação no próprio eixo ---
+            double giro = gamepad1.right_stick_x * 3.0;
+
+            // --- Cinemática do Mecanum: soma dos três movimentos por roda ---
+            double potenciaFE = frente + lado + giro;
+            double potenciaFD = frente - lado - giro;
+            double potenciaTE = frente - lado + giro;
+            double potenciaTD = frente + lado - giro;
+
+            // Normaliza para nenhuma potência passar de 1.0 (ou -1.0)
+            double maior = Math.max(1.0, Math.max(
+                    Math.max(Math.abs(potenciaFE), Math.abs(potenciaFD)),
+                    Math.max(Math.abs(potenciaTE), Math.abs(potenciaTD))
+            ));
+
+            // --- Telemetria simples para conferir os valores no Driver Station ---
+            telemetry.addData("Frente/Tras", frente);
+            telemetry.addData("Lado", lado);
+            telemetry.addData("Giro", giro);
+
+            String nomeModo = modoVelocidade == 0 ? "NORMAL" : (modoVelocidade == 1 ? "FAST" : "ULTRAFAST");
+            telemetry.addData("Modo de velocidade", nomeModo);
+
+            telemetry.update();
+
+            // Detecta o instante em que R1 foi apertado (borda de subida)
+            if (gamepad1.right_bumper && !botaoApertadoAnterior) {
+                modoVelocidade = (modoVelocidade + 1) % 3; // 0 -> 1 -> 2 -> 0 -> ...
+            }
+            botaoApertadoAnterior = gamepad1.right_bumper;
+
+// Converte o modo atual em fator de velocidade
+            double fatorVelocidade;
+            if (modoVelocidade == 0) {
+                fatorVelocidade = VELOCIDADE_NORMAL;
+            } else if (modoVelocidade == 1) {
+                fatorVelocidade = VELOCIDADE_FAST;
+            } else {
+                fatorVelocidade = VELOCIDADE_ULTRAFAST;
+            }
+
+            frontLeft.setVelocity((potenciaFE / maior) * velocidadeMaxima * fatorVelocidade);
+            frontRight.setVelocity((potenciaFD / maior) * velocidadeMaxima * fatorVelocidade);
+            backLeft.setVelocity((potenciaTE / maior) * velocidadeMaxima * fatorVelocidade);
+            backRight.setVelocity((potenciaTD / maior) * velocidadeMaxima * fatorVelocidade);
+        }
+    }
+}
