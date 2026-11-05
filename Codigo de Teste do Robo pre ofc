@@ -1,0 +1,198 @@
+package org.firstinspires.ftc.teamcode;
+
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.Servo;
+
+@TeleOp(name = "TestePreOFC", group = "TeleOp")
+public class MeuPrimeiroCodigo extends LinearOpMode {
+
+    // Motores do chassi Mecanum
+    private DcMotorEx frontLeft;
+    private DcMotorEx frontRight;
+    private DcMotorEx backLeft;
+    private DcMotorEx backRight;
+
+    // Motores de Mecanismos (Player 2)
+    private DcMotorEx intake;
+    private DcMotorEx outPolen1;
+    private DcMotorEx outPolen2;
+    private DcMotorEx outNectar;
+
+    // Servos de Bloqueio (Player 2)
+    private Servo servoPolen = null;
+    private Servo servoNectar = null;
+
+    private static final double POSICAO_DESBLOQUEADO = 0.0;
+    private static final double POSICAO_BLOQUEADO = 1.0;
+
+    // Controles de Toggle (Alternância) do Player 2
+    private boolean outtakeLigado = false;
+    private boolean botaoOuttakeAnterior = false;
+
+    // Controle de velocidade do Chassi (Player 1)
+    private int modoVelocidade = 0; // 0 = normal, 1 = fast, 2 = ultrafast
+    private boolean botaoApertadoAnterior = false;
+
+    private final double VELOCIDADE_NORMAL = 0.7;
+    private final double VELOCIDADE_FAST = 0.85;
+    private final double VELOCIDADE_ULTRAFAST = 1.0;
+
+    private double velocidadeMaxima;
+
+    @Override
+    public void runOpMode() {
+
+        // 1. MAPEAMENTO DE HARDWARE (Confira se os nomes no Driver Hub estão idênticos!)
+        frontLeft = hardwareMap.get(DcMotorEx.class, "frontLeft");
+        frontRight = hardwareMap.get(DcMotorEx.class, "frontRight");
+        backLeft = hardwareMap.get(DcMotorEx.class, "backLeft");
+        backRight = hardwareMap.get(DcMotorEx.class, "backRight");
+
+        intake = hardwareMap.get(DcMotorEx.class, "intake");
+        outPolen1 = hardwareMap.get(DcMotorEx.class, "outPolen"); // Verifique se no Hub é "outPolen" ou "outPolen1"
+        outPolen2 = hardwareMap.get(DcMotorEx.class, "outPolen2");
+        outNectar = hardwareMap.get(DcMotorEx.class, "outNectar");
+
+        servoPolen = hardwareMap.get(Servo.class, "servoPolen");
+        servoNectar = hardwareMap.get(Servo.class, "servoNectar");
+
+        // 2. DIREÇÃO DOS MOTORES
+        backRight.setDirection(DcMotorSimple.Direction.FORWARD);
+        frontRight.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        // INVERTIDO: Se a coleta ainda girar para o lado errado, troque REVERSE por FORWARD aqui
+        intake.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        outNectar.setDirection(DcMotorSimple.Direction.FORWARD);
+        outPolen1.setDirection(DcMotorSimple.Direction.FORWARD);
+        outPolen2.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        // 3. COMPORTAMENTO DE FREIO (BRAKE)
+        intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outPolen1.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outPolen2.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outNectar.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        // 4. MODO DOS MOTORES
+        frontLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        frontRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        backRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        intake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outPolen1.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outPolen2.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outNectar.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        // Inicia os servos na posição 0.0
+        servoPolen.setPosition(POSICAO_DESBLOQUEADO);
+        servoNectar.setPosition(POSICAO_DESBLOQUEADO);
+
+        velocidadeMaxima = frontLeft.getMotorType().getAchieveableMaxTicksPerSecond();
+
+        telemetry.addData("Status", "Pronto para iniciar");
+        telemetry.update();
+
+        waitForStart();
+
+        while (opModeIsActive()) {
+
+            // =================================================================
+            // PARTE DO PLAYER 1 (CHASSI MECANUM)
+            // =================================================================
+            double frente = -gamepad1.left_stick_y * 3.0;
+            double lado = (gamepad1.right_trigger > 0.1 ? 1.0 : 0.0) - (gamepad1.left_trigger > 0.1 ? 1.0 : 0.0);
+            lado *= 1.1;
+            double giro = gamepad1.right_stick_x * 3.0;
+
+            double potenciaFE = frente + lado + giro;
+            double potenciaFD = frente - lado - giro;
+            double potenciaTE = frente - lado + giro;
+            double potenciaTD = frente + lado - giro;
+
+            double maior = Math.max(1.0, Math.max(
+                    Math.max(Math.abs(potenciaFE), Math.abs(potenciaFD)),
+                    Math.max(Math.abs(potenciaTE), Math.abs(potenciaTD))
+            ));
+
+            if (gamepad1.right_bumper && !botaoApertadoAnterior) {
+                modoVelocidade = (modoVelocidade + 1) % 3;
+            }
+            botaoApertadoAnterior = gamepad1.right_bumper;
+
+            double fatorVelocidade;
+            if (modoVelocidade == 0) {
+                fatorVelocidade = VELOCIDADE_NORMAL;
+            } else if (modoVelocidade == 1) {
+                fatorVelocidade = VELOCIDADE_FAST;
+            } else {
+                fatorVelocidade = VELOCIDADE_ULTRAFAST;
+            }
+
+            frontLeft.setVelocity((potenciaFE / maior) * velocidadeMaxima * fatorVelocidade);
+            frontRight.setVelocity((potenciaFD / maior) * velocidadeMaxima * fatorVelocidade);
+            backLeft.setVelocity((potenciaTE / maior) * velocidadeMaxima * fatorVelocidade);
+            backRight.setVelocity((potenciaTD / maior) * velocidadeMaxima * fatorVelocidade);
+
+
+            // =================================================================
+            // PARTE DO PLAYER 2 (INTAKE, OUTTAKES E SERVOS)
+            // =================================================================
+
+            // 1. COLETA (INTAKE) - R1 coleta positivo, e R2 expele negativo
+            if (gamepad2.right_bumper) {
+                intake.setPower(1.0); // Coleta com força máxima
+            } else if (gamepad2.right_trigger > 0.1) {
+                intake.setPower(-gamepad2.right_trigger); // Descoleta/Expele proporcional ao gatilho
+            } else {
+                intake.setPower(0.0); // Parado
+            }
+
+            // 2. OUTTAKE (PÓLEN 1, PÓLEN 2 e NÉCTAR) AO CLICAR NO BOTÃO "X"
+            // No controle de PlayStation, o botão X (Cruz) é gamepad2.cross (ou gamepad2.a).
+            // (Se estiver usando controle Xbox e quiser o X azul, troque gamepad2.cross por gamepad2.x)
+            boolean botaoOuttakeAtual = gamepad2.cross;
+
+            if (botaoOuttakeAtual && !botaoOuttakeAnterior) {
+                outtakeLigado = !outtakeLigado; // Liga ou desliga ao clicar
+            }
+            botaoOuttakeAnterior = botaoOuttakeAtual;
+
+            if (outtakeLigado) {
+                outPolen1.setPower(0.4767);
+                outPolen2.setPower(0.4767);
+                outNectar.setPower(0.80);
+
+           } else {
+                outPolen1.setPower(0.0);
+                outPolen2.setPower(0.0);
+                outNectar.setPower(0.0);
+            }
+
+            // 3. SERVOS:
+            // Clicar Triângulo (Y) manda para 0.0. Clicar Bolinha (B) manda para 1.0.
+            // Se já estiver na posição e você clicar de novo, ele permanece na mesma posição.
+            if (gamepad2.triangle) {
+                servoPolen.setPosition(POSICAO_DESBLOQUEADO); // 0.0
+                servoNectar.setPosition(POSICAO_DESBLOQUEADO); // 0.0
+            } else if (gamepad2.circle) {
+                servoPolen.setPosition(POSICAO_BLOQUEADO); // 1.0
+                servoNectar.setPosition(POSICAO_BLOQUEADO); // 1.0
+            }
+
+            // =================================================================
+            // TELEMETRIA
+            // =================================================================
+            String nomeModo = modoVelocidade == 0 ? "NORMAL" : (modoVelocidade == 1 ? "FAST" : "ULTRAFAST");
+            telemetry.addData("Modo Chassi", nomeModo);
+            telemetry.addData("Outtakes (Botão X)", outtakeLigado ? "LIGADOS" : "DESLIGADOS");
+            telemetry.addData("Posição Servo Pólen", servoPolen.getPosition());
+            telemetry.addData("Posição Servo Néctar", servoNectar.getPosition());
+            telemetry.update();
+        }
+    }
+}
