@@ -1,0 +1,166 @@
+package org.firstinspires.ftc.teamcode;
+
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.Servo;
+
+
+@TeleOp(name = "Codigo pre oficial", group = "TeleOp")
+public class TeleOperado extends LinearOpMode {
+
+    //Motores da Movimentação
+    private DcMotorEx mecanumFL;
+    private DcMotorEx mecanumFR;
+    private DcMotorEx mecanumBL;
+    private DcMotorEx mecanumBR;
+
+    // Servos para o bloqueio da passagem do polen e do nectar;
+    private Servo servoPolen = null;
+    private Servo servoNectar = null;
+
+    //velocidade do robô ajustavel de 0 a 1;
+    private static final double VELOCIDADE = 0.7;
+
+    //Motores intake e transfer;
+
+    private DcMotorEx intakeTransfer;
+
+    //Motores outtake
+
+    private DcMotor outPolen1;
+    private DcMotor outPolen2;
+    private DcMotor outNectar;
+
+    private boolean outtakeLigado = false;
+    private boolean botaoOuttakeAnterior = false;
+
+    // posição desbloquear a saida de polen e nectar
+    private static final double POSICAO_DESBLOQUEADO = 0.0;
+
+    private double velocidadeMaxima;
+
+    @Override
+    public void runOpMode() {
+
+        //Parte do código que mapeia os motores na Driver;
+
+        //Motores movimentação;
+        mecanumFL = hardwareMap.get(DcMotorEx.class, "mecanumFL");
+        mecanumFR = hardwareMap.get(DcMotorEx.class, "mecanumFR");
+        mecanumBL = hardwareMap.get(DcMotorEx.class, "mecanumBL");
+        mecanumBR = hardwareMap.get(DcMotorEx.class, "mecanumBR");
+
+        //motores intake e transfer;
+        intakeTransfer = hardwareMap.get(DcMotorEx.class, "intakeTransfer");
+
+        //motores do Shoter;
+        outPolen1 = hardwareMap.get(DcMotor.class, "outPolen1");
+        outPolen2 = hardwareMap.get(DcMotor.class, "outPolen2");
+
+        outNectar = hardwareMap.get(DcMotor.class, "outNectar");
+
+        // Servos;
+        servoPolen = hardwareMap.get(Servo.class, "servoPolen");
+        servoNectar = hardwareMap.get(Servo.class, "servoNectar");
+
+        //Parte do código que da REVERSE OU FOWOARD caso precisar;
+
+        intakeTransfer.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outPolen1.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outPolen2.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        outNectar.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        //Encoders;
+
+        mecanumFL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        mecanumFR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        mecanumBL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        mecanumBR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        intakeTransfer.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outPolen1.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outPolen2.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        outNectar.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        //Reverses e fowards
+        intakeTransfer.setDirection(DcMotorSimple.Direction.REVERSE);
+
+
+        velocidadeMaxima = mecanumFL.getMotorType().getAchieveableMaxTicksPerSecond();
+
+        waitForStart();
+
+        while (opModeIsActive()) {
+            movimentacao();
+            intakeOutake();
+        }
+    }
+    public void movimentacao () {
+        double frente = -gamepad1.left_stick_y * 3;
+
+        double lado = (gamepad1.right_trigger_pressed ? 1.0 : 0.0) - (gamepad1.left_trigger_pressed ? 1.0 : 0.0);
+
+        lado *= 1.1;
+
+        double giro = gamepad1.right_stick_x * 3.0;
+
+        double potenciaMcFL = frente + lado + giro;
+        double potenciaMcFR = frente - lado - giro;
+        double potenciaMcBL = frente - lado + giro;
+        double potenciaMcBR = frente + lado - giro;
+
+        double maior = Math.max(1.0, Math.max(
+                Math.max(Math.abs(potenciaMcFL), Math.abs(potenciaMcFR)),
+                Math.max(Math.abs(potenciaMcBL), Math.abs(potenciaMcBR))
+        ));
+
+        mecanumFL.setVelocity((potenciaMcFL / maior) * velocidadeMaxima * VELOCIDADE);
+        mecanumFR.setVelocity((potenciaMcFR / maior) * velocidadeMaxima * VELOCIDADE);
+        mecanumBL.setVelocity((potenciaMcBL / maior) * velocidadeMaxima * VELOCIDADE);
+        mecanumBR.setVelocity((potenciaMcBR / maior) * velocidadeMaxima * VELOCIDADE);
+
+    }
+
+    public void intakeOutake () {
+
+        if (gamepad2.right_bumper) {
+            intakeTransfer.setPower(1.0); // Coleta elementos
+        } else if (gamepad2.right_trigger > 0.1) {
+            intakeTransfer.setPower(-gamepad2.right_trigger * 3); //Expulsa elementos
+        } else {
+            intakeTransfer.setPower(0.0); // Parado
+        }
+
+        boolean botaoOuttakeAtual = gamepad2.cross;
+
+        if (botaoOuttakeAtual && !botaoOuttakeAnterior) {
+            outtakeLigado = !outtakeLigado; // Liga ou desliga ao clicar
+        }
+        botaoOuttakeAnterior = botaoOuttakeAtual;
+
+        if (outtakeLigado) {
+            outPolen1.setPower(0.46);
+            outPolen2.setPower(0.46);
+            outNectar.setPower(0.65);
+
+        } else {
+            outPolen1.setPower(0.0);
+            outPolen2.setPower(0.0);
+            outNectar.setPower(0.0);
+        }
+
+        // 3. SERVOS:
+        // Clicar Triângulo (Y) manda para 0.0. Clicar Bolinha (B) manda para 1.0.
+        // Se já estiver na posição e você clicar de novo, ele permanece na mesma posição.
+        if (gamepad2.y) {
+            servoPolen.setPosition(1 ); // 0.0
+            servoNectar.setPosition(1); // 0.0
+        } else {
+            servoPolen.setPosition(0); // 1.0
+            servoNectar.setPosition(0); // 1.0
+        }
+    }
+}
